@@ -65,6 +65,14 @@ def init_db():
         except Exception:
             pass
     conn = _db()
+    # migrasi: pastikan kolom aktif ada (DB lama dari versi sebelumnya)
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(karyawan)").fetchall()]
+        if "aktif" not in cols:
+            conn.execute("ALTER TABLE karyawan ADD COLUMN aktif INTEGER DEFAULT 1")
+            conn.commit()
+    except Exception:
+        pass
     conn.execute("""CREATE TABLE IF NOT EXISTS karyawan (
         kode INTEGER PRIMARY KEY,
         nama TEXT NOT NULL,
@@ -83,7 +91,8 @@ def init_db():
         status INTEGER DEFAULT 0,
         ewallet TEXT DEFAULT '',
         btc TEXT DEFAULT '',
-        ovo TEXT DEFAULT ''
+        ovo TEXT DEFAULT '',
+        aktif INTEGER DEFAULT 1
     )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS histori (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +138,7 @@ def db_upsert_karyawan(k):
                   k.get("eth",""), k.get("pintu",""), k.get("jatuh_tempo",""),
                   k.get("komisi",""), k.get("notes",""), k.get("bank",""), k.get("norek",""),
                   k.get("namarek",""), k.get("email",""), k.get("notelp",""), k.get("status",0),
-                  k.get("ewallet",""), k.get("btc",""), k.get("ovo","")))
+                  k.get("ewallet",""), k.get("btc",""), k.get("ovo",""), k.get("aktif",1)))
     conn.commit()
     conn.close()
 
@@ -838,8 +847,8 @@ class FastGajiApp:
         all_rows = []
         for k in self.karyawan:
             nama_low = k["nama"].lower()
-            # JANGAN tampilkan karyawan yang dihapus/pecat (marker di NAMA)
-            if "pecat" in nama_low:
+            # HANYA tampilkan karyawan AKTIF (aktif=1)
+            if k.get("aktif", 1) != 1:
                 continue
             jt = _parse_jatuh_tempo(k.get("jatuh_tempo", ""))
             days_left = jt[1] if jt else 99999
