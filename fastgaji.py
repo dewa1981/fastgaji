@@ -137,6 +137,57 @@ def db_add_histori(h):
     conn.commit()
     conn.close()
 
+def _bulan_dari_tanggal(s):
+    """Parse '27-Sep-25' / '2026-08-04' / '11/01/2013' -> 'YYYY-MM'. None kalau gagal."""
+    if not s:
+        return None
+    s = str(s).strip()
+    months = {"jan":1,"feb":2,"mar":3,"apr":4,"mei":5,"may":5,"jun":6,"jul":7,"agu":8,"aug":8,
+              "sep":9,"okt":10,"oct":10,"nov":11,"des":12,"dec":12,
+              "01":1,"02":2,"03":3,"04":4,"05":5,"06":6,"07":7,"08":8,"09":9,"10":10,"11":11,"12":12}
+    try:
+        if "-" in s:
+            parts = s.split("-")
+            if len(parts) >= 3:
+                # 27-Sep-25 atau 2026-08-04
+                if len(parts[0]) == 4 and parts[0].isdigit():  # YYYY-MM-DD
+                    return f"{parts[0]}-{int(parts[1]):02d}"
+                else:  # DD-Mon-YY
+                    m = months.get(parts[1].lower())
+                    if m:
+                        y = parts[2][:2] if len(parts[2]) <= 2 else parts[2][-2:]
+                        return f"20{y}-{m:02d}"
+        elif "/" in s:
+            parts = s.split("/")
+            if len(parts) >= 3:  # DD/MM/YYYY
+                m = months.get(parts[1])
+                if m:
+                    y = parts[2][:4] if len(parts[2]) >= 4 else f"20{parts[2]}"
+                    return f"{y}-{m:02d}"
+    except Exception:
+        pass
+    return None
+
+def db_sudah_gajian_bulan_ini(kode):
+    """Cek apakah karyawan sudah digaji bulan ini (exclude test 1 USDT)."""
+    init_db()
+    conn = _db()
+    rows = conn.execute("SELECT tanggal, nama, notes FROM histori WHERE kode_karyawan=? ORDER BY id DESC LIMIT 200",
+                        (kode,)).fetchall()
+    conn.close()
+    from datetime import datetime as _dt
+    bulan_ini = _dt.now().strftime("%Y-%m")
+    for r in rows:
+        # exclude transaksi TEST (1 USDT testing)
+        if r["nama"] == "(TEST ADDRESS)":
+            continue
+        if "test" in (r["notes"] or "").lower() and "USDT" in (r["notes"] or "").upper():
+            continue
+        bln = _bulan_dari_tanggal(r["tanggal"])
+        if bln == bulan_ini:
+            return True
+    return False
+
 def db_histori_by_karyawan(kode, limit=200):
     """Histori gaji per karyawan (dari DB asli)."""
     init_db()
@@ -280,9 +331,8 @@ def load_data():
     return {"karyawan": karyawan, "histori": histori}
 
 def save_data(data):
-    """Simpan semua karyawan + histori ke SQLite."""
+    """Simpan semua karyawan ke SQLite (histori TIDAK disentuh — utuh!)."""
     init_db()
-    # upsert semua karyawan (by kode)
     seen = set()
     for k in data["karyawan"]:
         kode = k.get("kode", 0)
@@ -291,18 +341,15 @@ def save_data(data):
             k["kode"] = kode
         db_upsert_karyawan(k)
         seen.add(kode)
-    # hapus karyawan yang gak ada lagi di list
+    # hapus karyawan yang gak ada lagi di list (dengan param SQL yang BENAR)
     conn = _db()
-    conn.execute("DELETE FROM karyawan WHERE kode NOT IN (%s)" % ",".join("?" * len(seen)) if seen else "DELETE FROM karyawan")
+    if seen:
+        placeholders = ",".join("?" * len(seen))
+        conn.execute(f"DELETE FROM karyawan WHERE kode NOT IN ({placeholders})", tuple(seen))
+    else:
+        conn.execute("DELETE FROM karyawan")
     conn.commit()
     conn.close()
-    # histori
-    conn = _db()
-    conn.execute("DELETE FROM histori")
-    conn.commit()
-    conn.close()
-    for h in data["histori"]:
-        db_add_histori(h)
 
 # ================= KURS BINANCE P2P =================
 def get_p2p_rate():
@@ -358,7 +405,26 @@ class FastGajiApp:
         # LEFT: daftar karyawan
         left = tk.Frame(main, bg="#0d1117")
         main.add(left, width=420)
-        tk.Label(left, text="📋 Daftar Karyawan", font=("Segoe UI", 11, "bold"), bg="#0d1117", fg="#e6edf3").pack(anchor="w")
+        # ===== BLOK A: Jatuh Tempo (yang mau gajian) =====
+        tk.Label(left, text="🔴 BLOK A — Jatuh Tempo Gajian", font=("Segoe UI", 10, "bold"), bg="#0d1117", fg="#f85149").pack(anchor="w")
+        self.tree_a = ttk.Treeview(left, columns=("nama", "gaji", "usd"), show="headings", selectmode="browse", height=9)
+        self.tree_a.heading("nama", text="Nama Karyawan")
+        self.tree_a.heading("gaji", text="Gaji (IDR)")
+        self.tree_a.heading("usd", text="USDT")
+        self.tree_a.column("nama", width=200)
+        self.tree_a.column("gaji", width=110, anchor="e")
+        self.tree_a.column("usd", width=100, anchor="e")
+        self.tree_a.tag_configure("red", background="#7d1a1a", foreground="#ffd7d7")
+        self.tree_a.tag_configure("soon", background="#5a3a00", foreground="#ffe8b3")
+        self.tree_a.tag_configure("today", background="#7d5a00", foreground="#fff2cc")
+        self.tree_a.pack(fill="x")
+        self.tree_a.bind("<<TreeviewSelect>>", self._on_select)
+        self.tree_a.bind("<Button-3>", self._show_context_menu)
+        self.tree_a_jt = tk.Label(left, text="", font=("Segoe UI", 9), bg="#0d1117", fg="#8b949e")
+        self.tree_a_jt.pack(anchor="w", pady=(2, 6))
+
+        # ===== BLOK B: Semua Karyawan =====
+        tk.Label(left, text="📋 BLOK B — Data Karyawan", font=("Segoe UI", 10, "bold"), bg="#0d1117", fg="#58a6ff").pack(anchor="w")
         self.filter_var = tk.StringVar()
         self.filter_var.trace_add("write", lambda *a: self._refresh_list())
         tk.Entry(left, textvariable=self.filter_var, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat").pack(fill="x", pady=4)
@@ -370,12 +436,12 @@ class FastGajiApp:
         self.tree.column("nama", width=200)
         self.tree.column("gaji", width=110, anchor="e")
         self.tree.column("usd", width=100, anchor="e")
-        # tag: merah = jatuh tempo dekat/telat, kuning = jatuh tempo hari ini
         self.tree.tag_configure("red", background="#7d1a1a", foreground="#ffd7d7")
         self.tree.tag_configure("soon", background="#5a3a00", foreground="#ffe8b3")
         self.tree.tag_configure("today", background="#7d5a00", foreground="#fff2cc")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
+        self.tree.bind("<Button-3>", self._show_context_menu)
 
         # Total label
         self.total_label = tk.Label(left, text="", font=("Segoe UI", 10, "bold"), bg="#0d1117", fg="#f85149")
@@ -505,10 +571,9 @@ class FastGajiApp:
             txid = w3.eth.send_raw_transaction(signed.rawTransaction)
             tx_hex = w3.to_hex(txid)
             # simpan ke histori test
-            self.histori.append({"nama": "(TEST ADDRESS)", "usdt": 1.0, "txid": tx_hex,
-                                  "waktu": datetime.now().strftime("%Y-%m-%d %H:%M")})
-            self.data["histori"] = self.histori
-            save_data(self.data)
+            db_add_histori({"kode_karyawan": 0, "nama": "(TEST ADDRESS)", "usdt": 1.0, "txid": tx_hex,
+                             "tanggal": datetime.now().strftime("%Y-%m-%d"), "notes": "TEST-USDT",
+                             "waktu": datetime.now().strftime("%Y-%m-%d %H:%M")})
             self._refresh_hist()
             messagebox.showinfo("TEST TERKIRIM! ✅",
                 f"1 USDT test terkirim ke:\n{address}\n\nTx: {tx_hex}\n\nKalau masuk = address BENAR!\nKalau gak masuk = salah!")
@@ -615,7 +680,11 @@ class FastGajiApp:
         # ---- field Entry biasa ----
         row = 0
         tk.Label(win, text="Kode Karyawan (unik):", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
-        kode_var = tk.StringVar(value=str(existing.get("kode", "")) if existing else "")
+        if existing:
+            kode_val = str(existing.get("kode", ""))
+        else:
+            kode_val = str(db_next_kode())  # AUTO-NUMBER!
+        kode_var = tk.StringVar(value=kode_val)
         kode_entry = tk.Entry(win, textvariable=kode_var, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat")
         kode_entry.grid(row=row, column=1, sticky="w", padx=8, pady=4)
         row += 1
@@ -689,6 +758,7 @@ class FastGajiApp:
                 return
             kode = kode_var.get().strip()
             gaji = _parse_idr(gaji_var.get())
+            eth_baru = eth_var.get().strip()
             # kode unik (primary key ala MS Access)
             if kode:
                 for x in self.karyawan:
@@ -698,12 +768,24 @@ class FastGajiApp:
             else:
                 # auto-generate: max+1
                 kode = str(max([_parse_idr(str(x.get("kode", 0))) for x in self.karyawan], default=0) + 1)
+            # ADDRESS EVM UNIK — tidak boleh ada yang sama di DB!
+            if eth_baru:
+                eth_norm = eth_baru.lower()
+                for x in self.karyawan:
+                    if not existing or x["nama"] != existing["nama"]:
+                        if x.get("eth", "").lower() == eth_norm:
+                            messagebox.showwarning("⚠️ Address Sudah Ada!",
+                                f"Address EVM ini SUDAH dipakai karyawan lain:\n\n"
+                                f"👤 {x['nama']}\n"
+                                f"🔗 {x.get('eth','')}\n\n"
+                                f"Address tidak boleh dobel — simpan DIBATALKAN!")
+                            return
             k = {
                 "kode": int(kode) if kode.isdigit() else kode,
                 "nama": nama,
                 "gaji": gaji,
                 "gaji_x_fee": int(gaji * (1 + FEE_RATE)),
-                "eth": eth_var.get().strip(),
+                "eth": eth_baru,
                 "pintu": pintu_var.get().strip(),
                 "jatuh_tempo": jt_var.get().strip(),
                 "komisi": komisi_text.get("1.0", "end").strip(),
@@ -735,33 +817,146 @@ class FastGajiApp:
             self._edit_dialog(k)
 
     def _refresh_list(self):
+        """Isi Blok A (jatuh tempo dekat) + Blok B (semua karyawan)."""
+        # bersihkan kedua tree
         self.tree.delete(*self.tree.get_children())
+        self.tree_a.delete(*self.tree_a.get_children())
         filt = self.filter_var.get().lower()
 
-        # hitung jatuh tempo + sort: yang paling dekat gajian di ATAS
+        # hitung jatuh tempo untuk semua
         rows = []
         for k in self.karyawan:
-            if filt and filt not in k["nama"].lower():
+            nama_low = k["nama"].lower()
+            if filt and filt not in nama_low:
+                continue
+            # JANGAN tampilkan karyawan yang dihapus/pecat (marker di NAMA)
+            if "pecat" in nama_low:
                 continue
             jt = _parse_jatuh_tempo(k.get("jatuh_tempo", ""))
-            days_left = jt[1] if jt else 99999  # tanpa tanggal = paling bawah
+            days_left = jt[1] if jt else 99999
             rows.append((days_left, k))
         rows.sort(key=lambda x: x[0])  # ascending: dekat/telat di atas
 
+        # ===== BLOK A: hanya yang jatuh tempo dekat (<=7 hari / telat) =====
+        blok_a = [r for r in rows if r[0] != 99999 and r[0] <= 7]
+        for days_left, k in blok_a:
+            usdt = f"{k['gaji'] * (1 + FEE_RATE) / self.kurs:,.2f}" if self.kurs else "-"
+            tag = ""
+            if days_left < 0:
+                tag = "red"
+            elif days_left == 0:
+                tag = "today"
+            else:
+                tag = "soon"
+            self.tree_a.insert("", "end", values=(k["nama"], _fmt_idr(k["gaji"]), usdt), tags=(tag,))
+
+        # label info blok A
+        if blok_a:
+            telat = sum(1 for d, _ in blok_a if d < 0)
+            info = f"🟢 {len(blok_a)} karyawan dekat gajian"
+            if telat:
+                info += f" (🔴 {telat} TELAT!)"
+            self.tree_a_jt.config(text=info, fg="#f85149" if telat else "#3fb950")
+        else:
+            self.tree_a_jt.config(text="✅ Semua jatuh tempo aman (tidak ada yang dekat)", fg="#3fb950")
+
+        # ===== BLOK B: SEMUA karyawan =====
         total = 0
         for days_left, k in rows:
             usdt = f"{k['gaji'] * (1 + FEE_RATE) / self.kurs:,.2f}" if self.kurs else "-"
             tag = ""
             if days_left != 99999:
                 if days_left < 0:
-                    tag = "red"       # TELAT (sudah lewat jatuh tempo)
+                    tag = "red"
                 elif days_left == 0:
-                    tag = "today"     # JATUH TEMPO HARI INI
+                    tag = "today"
                 elif days_left <= 7:
-                    tag = "soon"      # dekat gajian (1-7 hari lagi)
+                    tag = "soon"
             self.tree.insert("", "end", values=(k["nama"], _fmt_idr(k["gaji"]), usdt), tags=(tag,) if tag else ())
             total += k["gaji"]
         self.total_label.config(text=f"Total Karyawan: {len(rows)}  |  Total Gaji: Rp {total:,.0f}")
+
+    def _show_context_menu(self, event):
+        """Menu klik kanan pada daftar karyawan."""
+        row = self.tree.identify_row(event.y)
+        if not row:
+            row = self.tree_a.identify_row(event.y)
+            tree = self.tree_a
+        else:
+            tree = self.tree
+        if row:
+            tree.selection_set(row)
+        menu = tk.Menu(self.root, tearoff=0, bg="#161b22", fg="#e6edf3",
+                       activebackground="#1f6feb", activeforeground="white")
+        menu.add_command(label="➕ Tambah Karyawan", command=self._tambah_karyawan)
+        menu.add_command(label="✏️ Edit Karyawan", command=self._edit_karyawan)
+        menu.add_command(label="🗑️ Hapus Karyawan", command=self._hapus_karyawan)
+        menu.add_separator()
+        menu.add_command(label="💸 Pembayaran Gaji", command=self._bayar)
+        menu.add_command(label="📜 Histori Gaji Karyawan", command=self._show_histori_popup)
+        menu.add_separator()
+        menu.add_command(label="🔄 Refresh", command=self._refresh_list)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _selected_karyawan(self):
+        sel = self.tree.selection()
+        if not sel:
+            sel = self.tree_a.selection()
+        if not sel:
+            return None
+        nama = self.tree.item(sel[0])["values"][0] if self.tree.selection() else self.tree_a.item(sel[0])["values"][0]
+        return next((x for x in self.karyawan if x["nama"] == nama), None)
+
+    def _show_histori_popup(self):
+        """Popup histori gaji lengkap per karyawan (klik kanan -> Histori Gaji)."""
+        k = self._selected_karyawan()
+        if not k:
+            messagebox.showwarning("Pilih", "Pilih karyawan dulu!")
+            return
+        kode = k.get("kode", 0)
+        win = tk.Toplevel(self.root)
+        win.title(f"📜 Histori Gaji: {k['nama'][:40]}")
+        win.configure(bg="#0d1117")
+        win.geometry("760x480")
+
+        tk.Label(win, text=f"Karyawan: {k['nama']}", bg="#0d1117", fg="#58a6ff",
+                 font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
+        tk.Label(win, text=f"Gaji sekarang: Rp {_fmt_idr(k.get('gaji',0))}  |  EVM: {k.get('eth','') or '-'}",
+                 bg="#0d1117", fg="#8b949e", font=("Segoe UI", 9)).pack(anchor="w", padx=10)
+
+        cols = ("tanggal", "gaji", "notes")
+        tree = ttk.Treeview(win, columns=cols, show="headings", height=16)
+        tree.heading("tanggal", text="Tanggal")
+        tree.heading("gaji", text="Gaji")
+        tree.heading("notes", text="Notes / Tx Hash")
+        tree.column("tanggal", width=110)
+        tree.column("gaji", width=110, anchor="e")
+        tree.column("notes", width=500)
+        style2 = ttk.Style()
+        style2.configure("Treeview", background="#161b22", fieldbackground="#161b22", foreground="#e6edf3", rowheight=22)
+        style2.configure("Treeview.Heading", background="#0d1117", foreground="#58a6ff")
+        style2.map("Treeview", background=[("selected", "#1f6feb")])
+        tree.pack(fill="both", expand=True, padx=10, pady=8)
+
+        sb = ttk.Scrollbar(win, orient="vertical", command=tree.yview)
+        sb.pack(side="right", fill="y")
+        tree.configure(yscrollcommand=sb.set)
+
+        hist = db_histori_by_karyawan(kode, limit=500)
+        total = 0
+        for h in hist:
+            gaji = h.get("gaji_idr", 0)
+            total += gaji
+            notes = (h.get("notes", "") or "").replace("\n", " ")
+            if len(notes) > 90:
+                notes = notes[:90] + "..."
+            tree.insert("", "end", values=(h.get("tanggal",""), _fmt_idr(gaji), notes))
+
+        tk.Label(win, text=f"💰 Total histori ({len(hist)} transaksi): Rp {_fmt_idr(total)}",
+                 bg="#0d1117", fg="#d29922", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=10, pady=(0, 10))
 
     def _on_select(self, _):
         sel = self.tree.selection()
@@ -902,6 +1097,12 @@ class FastGajiApp:
             messagebox.showwarning("Alamat", f"{nama} tidak punya address EVM!")
             return
         usdt = k["gaji"] * (1 + FEE_RATE) / self.kurs
+        # CEGAH GAJIAN DOBEL: 1 bulan = 1x!
+        if db_sudah_gajian_bulan_ini(k.get("kode", 0)):
+            messagebox.showwarning("⚠️ SUDAH GAJIAN!",
+                f"{nama} SUDAH digaji bulan ini!\n\nAturan: 1 bulan = 1x gajian.\n\nKalau ini memang mau bayar lagi (bonus/hutang), "
+                f"batalkan dulu aturan ini di source.")
+            return
         if not messagebox.askyesno("Konfirmasi",
             f"Kirim {usdt:,.2f} USDT ke:\n{k['eth']}\n({nama})\n\nLANJUT?"):
             return
@@ -915,10 +1116,9 @@ class FastGajiApp:
                 "gas": 100000, "gasPrice": w3.eth.gas_price})
             signed = w3.eth.account.sign_transaction(tx, self.private_key)
             txid = w3.eth.send_raw_transaction(signed.rawTransaction)
-            self.histori.append({"nama": nama, "usdt": round(usdt, 2), "txid": w3.to_hex(txid),
-                                  "waktu": datetime.now().strftime("%Y-%m-%d %H:%M")})
-            self.data["histori"] = self.histori
-            save_data(self.data)
+            db_add_histori({"kode_karyawan": k.get("kode", 0), "nama": nama, "usdt": round(usdt, 2),
+                             "txid": w3.to_hex(txid), "tanggal": datetime.now().strftime("%Y-%m-%d"),
+                             "waktu": datetime.now().strftime("%Y-%m-%d %H:%M")})
             self._refresh_hist()
             messagebox.showinfo("TERKIRIM! 🎉", f"Tx: {w3.to_hex(txid)}")
         except Exception as e:
