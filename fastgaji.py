@@ -56,12 +56,38 @@ def _db():
     conn.row_factory = sqlite3.Row
     return conn
 
+DB_VERSION = 3  # naikkan kalau struktur/data DB berubah!
+
 def init_db():
-    # pertama kali: copy DB bawaan (dari bundle EXE) ke folder EXE kalau belum ada
-    if not os.path.exists(DB_FILE) and os.path.exists(_BUNDLED_DB) and _BUNDLED_DB != DB_FILE:
+    # ===== VERSIONING: kalau DB lokal LEBIH LAMA dari bundled → ganti! =====
+    if os.path.exists(_BUNDLED_DB) and _BUNDLED_DB != DB_FILE:
         try:
             import shutil
-            shutil.copy2(_BUNDLED_DB, DB_FILE)
+            perlu_ganti = False
+            if not os.path.exists(DB_FILE):
+                perlu_ganti = True
+            else:
+                # cek versi DB lokal
+                try:
+                    vconn = sqlite3.connect(DB_FILE)
+                    lokal_ver = vconn.execute("PRAGMA user_version").fetchone()[0]
+                    vconn.close()
+                    bconn = sqlite3.connect(_BUNDLED_DB)
+                    bundled_ver = bconn.execute("PRAGMA user_version").fetchone()[0]
+                    bconn.close()
+                    if bundled_ver > lokal_ver:
+                        perlu_ganti = True
+                except Exception:
+                    perlu_ganti = True
+            if perlu_ganti:
+                # backup DB lama dulu (biar data gak ilang!) lalu pakai DB baru
+                try:
+                    if os.path.exists(DB_FILE):
+                        import shutil as _sh
+                        _sh.copy2(DB_FILE, DB_FILE + ".bak")
+                except Exception:
+                    pass
+                shutil.copy2(_BUNDLED_DB, DB_FILE)
         except Exception:
             pass
     conn = _db()
