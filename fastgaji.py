@@ -33,6 +33,7 @@ KEY_FILE = os.path.join(APP_DIR, "fastgaji_key.enc")
 
 BSC_RPC = "https://bnb-mainnet.g.alchemy.com/v2/alch_KgymfWpXkADRUuQzAtwcD"
 USDT_CA = "0x55d398326f99059fF775485246999027B3197955"
+FEE_RATE = 0.002  # fee 0.2% dari kurs P2P
 USDT_ABI = [
     {"constant": False, "inputs": [{"name": "_to", "type": "address"}, {"name": "_value", "type": "uint256"}], "name": "transfer", "outputs": [{"name": "", "type": "bool"}], "type": "function"},
     {"constant": True, "inputs": [{"name": "_owner", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
@@ -178,17 +179,26 @@ class FastGajiApp:
         self.filter_var.trace_add("write", lambda *a: self._refresh_list())
         tk.Entry(left, textvariable=self.filter_var, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat").pack(fill="x", pady=4)
 
-        self.tree = ttk.Treeview(left, columns=("nama", "gaji"), show="headings", selectmode="browse")
+        self.tree = ttk.Treeview(left, columns=("nama", "gaji", "usd"), show="headings", selectmode="browse")
         self.tree.heading("nama", text="Nama Karyawan")
-        self.tree.heading("gaji", text="Gaji")
-        self.tree.column("nama", width=240)
-        self.tree.column("gaji", width=130, anchor="e")
+        self.tree.heading("gaji", text="Gaji (IDR)")
+        self.tree.heading("usd", text="USD")
+        self.tree.column("nama", width=200)
+        self.tree.column("gaji", width=110, anchor="e")
+        self.tree.column("usd", width=90, anchor="e")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
         # Total label
         self.total_label = tk.Label(left, text="", font=("Segoe UI", 10, "bold"), bg="#0d1117", fg="#f85149")
         self.total_label.pack(anchor="w", pady=4)
+
+        # Tombol tambah/edit
+        btns = tk.Frame(left, bg="#0d1117")
+        btns.pack(fill="x", pady=(0, 4))
+        tk.Button(btns, text="➕ Tambah", command=self._tambah_karyawan, bg="#238636", fg="white", relief="flat", padx=10).pack(side="left")
+        tk.Button(btns, text="✏️ Edit Detail", command=self._edit_karyawan, bg="#1f6feb", fg="white", relief="flat", padx=10).pack(side="left", padx=6)
+        tk.Button(btns, text="🗑️ Hapus", command=self._hapus_karyawan, bg="#f85149", fg="white", relief="flat", padx=10).pack(side="left", padx=6)
 
         # RIGHT: detail + aksi
         right = tk.Frame(main, bg="#0d1117")
@@ -233,7 +243,124 @@ class FastGajiApp:
         self.hist_text.pack(fill="both", expand=True, padx=6, pady=6)
         self.hist_text.config(state="disabled")
 
+        # Footer: balance wallet (pojok kiri bawah)
+        footer = tk.Frame(self.root, bg="#0d1117")
+        footer.pack(side="bottom", fill="x", padx=12, pady=6)
+        self.balance_label = tk.Label(footer, text="💰 Balance: buka key dulu 🔓", font=("Consolas", 10, "bold"),
+                                       bg="#0d1117", fg="#3fb950", anchor="w")
+        self.balance_label.pack(side="left")
+        tk.Button(footer, text="🔄 Refresh Balance", command=self._update_balance, bg="#30363d", fg="white",
+                  relief="flat", padx=8).pack(side="right")
+
         self._refresh_list()
+
+    def _update_balance(self):
+        """Cek balance USDT + BNB dari key yang dibuka."""
+        if not HAVE_WEB3:
+            self.balance_label.config(text="⚠️ web3 belum terinstall")
+            return
+        if not self.private_key:
+            self.balance_label.config(text="💰 Balance: buka key dulu 🔓")
+            return
+        try:
+            w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+            acct = w3.eth.account.from_key(self.private_key)
+            addr = acct.address
+            bnb = w3.eth.get_balance(addr) / 10**18
+            contract = w3.eth.contract(address=USDT_CA, abi=USDT_ABI)
+            usdt = contract.functions.balanceOf(addr).call() / 10**18
+            self.balance_label.config(
+                text=f"💰 USDT: {usdt:,.2f}  |  BNB: {bnb:.4f}  |  {w3.to_checksum_address(addr)[:12]}...")
+        except Exception as e:
+            self.balance_label.config(text=f"⚠️ Balance error: {str(e)[:60]}")
+
+    def _tambah_karyawan(self):
+        self._edit_dialog(None)
+
+    def _hapus_karyawan(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Pilih", "Pilih karyawan dulu!")
+            return
+        nama = self.tree.item(sel[0])["values"][0]
+        if messagebox.askyesno("Hapus", f"Hapus {nama}?"):
+            self.karyawan = [k for k in self.karyawan if k["nama"] != nama]
+            self.data["karyawan"] = self.karyawan
+            save_data(self.data)
+            self._refresh_list()
+
+    def _edit_dialog(self, existing):
+        """Dialog tambah/edit karyawan."""
+        win = tk.Toplevel(self.root)
+        win.title("✏️ Edit Karyawan" if existing else "➕ Tambah Karyawan")
+        win.configure(bg="#0d1117")
+        win.geometry("560x480")
+
+        fields = [
+            ("nama", "Nama Karyawan"), ("kode", "Kode"), ("gaji", "Gaji (IDR)"),
+            ("gaji_x_fee", "Gaji + Fee (0.2%)"), ("eth", "EVM/ETH Address"),
+            ("pintu", "Pintu"), ("jatuh_tempo", "Jatuh Tempo"),
+            ("komisi", "Komisi"), ("notes", "Notes"),
+        ]
+        vals = existing or {}
+        entries = {}
+        for i, (key, label) in enumerate(fields):
+            tk.Label(win, text=label + ":", bg="#0d1117", fg="#e6edf3",
+                     font=("Segoe UI", 9)).grid(row=i, column=0, sticky="e", padx=8, pady=3)
+            e = tk.Entry(win, width=55, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat")
+            e.grid(row=i, column=1, sticky="w", padx=8, pady=3)
+            e.insert(0, str(vals.get(key, "")))
+            entries[key] = e
+
+        # Auto-fill gaji_x_fee dari gaji
+        def auto_fee(*_):
+            try:
+                gaji = int(entries["gaji"].get().replace(",", "").replace(".", ""))
+                entries["gaji_x_fee"].delete(0, "end")
+                entries["gaji_x_fee"].insert(0, str(int(gaji * (1 + FEE_RATE))))
+            except ValueError:
+                pass
+        entries["gaji"].bind("<KeyRelease>", auto_fee)
+
+        def save():
+            k = {}
+            for key, label in fields:
+                v = entries[key].get().strip()
+                if key in ("gaji", "gaji_x_fee"):
+                    try:
+                        k[key] = int(v.replace(",", "").replace(".", ""))
+                    except ValueError:
+                        k[key] = 0
+                else:
+                    k[key] = v
+            if not k.get("nama"):
+                messagebox.showwarning("Lengkap", "Nama wajib diisi!")
+                return
+            if existing:
+                for i, x in enumerate(self.karyawan):
+                    if x["nama"] == existing["nama"]:
+                        self.karyawan[i] = k
+                        break
+            else:
+                self.karyawan.append(k)
+            self.data["karyawan"] = self.karyawan
+            save_data(self.data)
+            self._refresh_list()
+            messagebox.showinfo("Sukses", "Karyawan tersimpan!")
+            win.destroy()
+
+        tk.Button(win, text="💾 Simpan", command=save, bg="#1f6feb", fg="white",
+                  relief="flat", padx=16, pady=4).grid(row=len(fields), column=1, sticky="w", padx=8, pady=12)
+
+    def _edit_karyawan(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Pilih", "Pilih karyawan dulu!")
+            return
+        nama = self.tree.item(sel[0])["values"][0]
+        k = next((x for x in self.karyawan if x["nama"] == nama), None)
+        if k:
+            self._edit_dialog(k)
 
     def _refresh_list(self):
         self.tree.delete(*self.tree.get_children())
@@ -242,7 +369,8 @@ class FastGajiApp:
         for k in self.karyawan:
             if filt and filt not in k["nama"].lower():
                 continue
-            self.tree.insert("", "end", values=(k["nama"], f"{k['gaji']:,.0f}"))
+            usd = f"{k['gaji'] / self.kurs:,.2f}" if self.kurs else "-"
+            self.tree.insert("", "end", values=(k["nama"], f"{k['gaji']:,.0f}", usd))
             total += k["gaji"]
         self.total_label.config(text=f"Total Karyawan: {len(self.karyawan)}  |  Total Gaji: Rp {total:,.0f}")
 
@@ -281,19 +409,19 @@ class FastGajiApp:
         usdt = k["gaji"] / self.kurs
         self.calc_label.config(
             text=f"{k['nama']}: Rp {k['gaji']:,.0f} ÷ {self.kurs:,.0f} = {usdt:,.2f} USDT "
-                 f"(kurs P2P +2%)")
+                 f"(kurs P2P +0.2%)")
 
     def _refresh_kurs_async(self):
         def worker():
             try:
                 rate = get_p2p_rate()
-                self.kurs = rate * 1.02  # +2%
+                self.kurs = rate * (1 + FEE_RATE)
                 self.root.after(0, lambda: self.kurs_label.config(
-                    text=f"🟢 Kurs P2P: Rp {rate:,.0f} → +2% = Rp {self.kurs:,.0f}/USDT (live!)"))
+                    text=f"🟢 Kurs P2P: Rp {rate:,.0f} → +0.2% = Rp {self.kurs:,.0f}/USDT (live!)"))
             except Exception as e:
                 self.root.after(0, lambda: self.kurs_label.config(
                     text=f"⚠️ Gagal ambil kurs: {e} — pakai manual 17.800"))
-                self.kurs = 17800 * 1.02
+                self.kurs = 17800 * (1 + FEE_RATE)
         threading.Thread(target=worker, daemon=True).start()
 
     def _hitung(self):
@@ -351,6 +479,7 @@ class FastGajiApp:
                     w3 = Web3(Web3.HTTPProvider(BSC_RPC))
                     addr = w3.to_checksum_address(w3.eth.account.from_key(self.private_key).address)
                 self.key_status.config(text=f"✅ Key terbuka! Address: {addr[:12]}...")
+                self._update_balance()
                 messagebox.showinfo("Sukses", f"Private key terbuka.\nAddress: {addr}")
                 win.destroy()
             except Exception:
