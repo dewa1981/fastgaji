@@ -834,22 +834,20 @@ class FastGajiApp:
         self.tree_a.delete(*self.tree_a.get_children())
         filt = self.filter_var.get().lower()
 
-        # hitung jatuh tempo untuk semua
-        rows = []
+        # hitung jatuh tempo: BLOK A pakai SEMUA karyawan (gak peduli filter!)
+        all_rows = []
         for k in self.karyawan:
             nama_low = k["nama"].lower()
-            if filt and filt not in nama_low:
-                continue
             # JANGAN tampilkan karyawan yang dihapus/pecat (marker di NAMA)
             if "pecat" in nama_low:
                 continue
             jt = _parse_jatuh_tempo(k.get("jatuh_tempo", ""))
             days_left = jt[1] if jt else 99999
-            rows.append((days_left, k))
-        rows.sort(key=lambda x: x[0])  # ascending: dekat/telat di atas
+            all_rows.append((days_left, k))
+        all_rows.sort(key=lambda x: x[0])  # ascending: dekat/telat di atas
 
-        # ===== BLOK A: hanya yang jatuh tempo dekat (<=7 hari / telat) =====
-        blok_a = [r for r in rows if r[0] != 99999 and r[0] <= 7]
+        # ===== BLOK A: hanya yang jatuh tempo dekat (<=7 hari / telat) — TANPA filter =====
+        blok_a = [r for r in all_rows if r[0] != 99999 and r[0] <= 7]
         for days_left, k in blok_a:
             usdt = f"{k['gaji'] * (1 + FEE_RATE) / self.kurs:,.2f}" if self.kurs else "-"
             tag = ""
@@ -871,7 +869,8 @@ class FastGajiApp:
         else:
             self.tree_a_jt.config(text="✅ Semua jatuh tempo aman (tidak ada yang dekat)", fg="#3fb950")
 
-        # ===== BLOK B: SEMUA karyawan =====
+        # ===== BLOK B: SEMUA karyawan (pakai filter!) =====
+        rows = [r for r in all_rows if not filt or filt in r[1]["nama"].lower()]
         total = 0
         for days_left, k in rows:
             usdt = f"{k['gaji'] * (1 + FEE_RATE) / self.kurs:,.2f}" if self.kurs else "-"
