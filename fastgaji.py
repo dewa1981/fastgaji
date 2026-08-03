@@ -40,6 +40,38 @@ USDT_ABI = [
     {"constant": True, "inputs": [], "name": "decimals", "outputs": [{"name": "", "type": "uint8"}], "type": "function"},
 ]
 
+# ================= FORMAT ANGKA (grouping ribuan) =================
+def _fmt_idr(n):
+    """1234567 -> 1.234.567 (format Indonesia)"""
+    try:
+        n = int(n)
+        s = f"{n:,}".replace(",", ".")
+        return s
+    except (ValueError, TypeError):
+        return str(n)
+
+def _parse_idr(s):
+    """1.234.567 -> 1234567"""
+    if not s:
+        return 0
+    try:
+        return int(str(s).replace(".", "").replace(",", "").strip())
+    except ValueError:
+        return 0
+
+def _grouping_entry(parent, textvariable):
+    """Entry dengan auto-grouping ribuan saat mengetik."""
+    from tkinter import Entry
+    e = Entry(parent, textvariable=textvariable, bg="#161b22", fg="#e6edf3",
+              insertbackground="#e6edf3", relief="flat")
+    return e
+
+def _apply_grouping(var):
+    """Format ulang angka di StringVar jadi grouping ribuan."""
+    raw = "".join(ch for ch in var.get() if ch.isdigit())
+    if raw:
+        var.set(_fmt_idr(raw))
+
 # ================= DATA DEFAULT (dari DB karyawan) =================
 DEFAULT_KARYAWAN = [
     {"nama": "HARTONI", "kode": 249, "gaji": 15000852, "gaji_x_fee": 15030854, "eth": "0x91043400624D998eF3cE5A6772176918d9E05046", "pintu": "@hartoni729", "jatuh_tempo": "11-Aug-25", "komisi": "100/120/130/150/200", "notes": "1may2026=15jt/14 @sep2025//13jt @jan202512jt @july2024gaji masuk 30-oct-2019lsg 2 bln 6jt"},
@@ -124,7 +156,7 @@ def save_data(data):
 def get_p2p_rate():
     """Ambil kurs USDT/IDR dari Binance P2P (rata-rata penjual terbaik)."""
     import urllib.request
-    payload = json.dumps({"page": 1, "rows": 5, "payTypes": [], "asset": "USDT", "tradeType": "SELL", "fiat": "IDR"}).encode()
+    payload = json.dumps({"page": 1, "rows": 5, "payTypes": [], "asset": "USDT", "tradeType": "BUY", "fiat": "IDR"}).encode()
     req = urllib.request.Request(
         "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search",
         data=payload, headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
@@ -182,10 +214,10 @@ class FastGajiApp:
         self.tree = ttk.Treeview(left, columns=("nama", "gaji", "usd"), show="headings", selectmode="browse")
         self.tree.heading("nama", text="Nama Karyawan")
         self.tree.heading("gaji", text="Gaji (IDR)")
-        self.tree.heading("usd", text="USD")
+        self.tree.heading("usd", text="USDT")
         self.tree.column("nama", width=200)
         self.tree.column("gaji", width=110, anchor="e")
-        self.tree.column("usd", width=90, anchor="e")
+        self.tree.column("usd", width=100, anchor="e")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
@@ -232,8 +264,7 @@ class FastGajiApp:
         self.calc_label.pack(anchor="w", padx=6, pady=4)
         ab = tk.Frame(act, bg="#0d1117")
         ab.pack(fill="x", padx=6, pady=(0, 6))
-        tk.Button(ab, text="🧮 Hitung USDT", command=self._hitung, bg="#238636", fg="white", relief="flat", padx=12).pack(side="left")
-        tk.Button(ab, text="💸 BAYAR GAJI (USDT)", command=self._bayar, bg="#f85149", fg="white", relief="flat", padx=12).pack(side="left", padx=6)
+        tk.Button(ab, text="💸 BAYAR GAJI (USDT)", command=self._bayar, bg="#f85149", fg="white", relief="flat", padx=12).pack(side="left")
         tk.Button(ab, text="📤 Export Excel", command=self._export, bg="#30363d", fg="white", relief="flat", padx=12).pack(side="left", padx=6)
 
         # histori
@@ -289,53 +320,136 @@ class FastGajiApp:
             save_data(self.data)
             self._refresh_list()
 
+    def _calendar_dialog(self, entry):
+        """Dialog pilih tanggal: Tanggal/Bulan/Tahun."""
+        win = tk.Toplevel(self.root)
+        win.title("📅 Pilih Tanggal")
+        win.configure(bg="#0d1117")
+        from tkinter import ttk as _ttk
+        vars = {}
+        rows = [("tanggal", list(range(1, 32))), ("bulan", ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]),
+                ("tahun", list(range(2020, 2036)))]
+        for i, (key, opts) in enumerate(rows):
+            tk.Label(win, text=key.title() + ":", bg="#0d1117", fg="#e6edf3").grid(row=i, column=0, padx=8, pady=4)
+            cb = _ttk.Combobox(win, values=opts, state="readonly", width=12)
+            cb.grid(row=i, column=1, padx=8, pady=4)
+            vars[key] = cb
+        # default dari entry yang ada
+        cur = entry.get().strip()
+        if cur:
+            parts = cur.replace("-", " ").split()
+            if len(parts) == 3:
+                if parts[0].isdigit(): vars["tanggal"].set(parts[0])
+                if parts[1].isdigit(): vars["bulan"].set(["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"][int(parts[1]) - 1])
+                elif parts[1] in vars["bulan"]["values"]: vars["bulan"].set(parts[1])
+                if parts[2].isdigit(): vars["tahun"].set(parts[2])
+        def ok():
+            t, b, y = vars["tanggal"].get(), vars["bulan"].get(), vars["tahun"].get()
+            if t and b and y:
+                entry.delete(0, "end")
+                entry.insert(0, f"{t}-{b}-{y[-2:]}")
+            win.destroy()
+        tk.Button(win, text="OK", command=ok, bg="#1f6feb", fg="white", relief="flat", padx=16).grid(row=3, column=1, sticky="w", padx=8, pady=10)
+
     def _edit_dialog(self, existing):
-        """Dialog tambah/edit karyawan."""
+        """Dialog tambah/edit karyawan: grouping, kalender, multiline, kode unik."""
         win = tk.Toplevel(self.root)
         win.title("✏️ Edit Karyawan" if existing else "➕ Tambah Karyawan")
         win.configure(bg="#0d1117")
-        win.geometry("560x480")
+        win.geometry("600x560")
 
-        fields = [
-            ("nama", "Nama Karyawan"), ("kode", "Kode"), ("gaji", "Gaji (IDR)"),
-            ("gaji_x_fee", "Gaji + Fee (0.2%)"), ("eth", "EVM/ETH Address"),
-            ("pintu", "Pintu"), ("jatuh_tempo", "Jatuh Tempo"),
-            ("komisi", "Komisi"), ("notes", "Notes"),
-        ]
-        vals = existing or {}
-        entries = {}
-        for i, (key, label) in enumerate(fields):
-            tk.Label(win, text=label + ":", bg="#0d1117", fg="#e6edf3",
-                     font=("Segoe UI", 9)).grid(row=i, column=0, sticky="e", padx=8, pady=3)
-            e = tk.Entry(win, width=55, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat")
-            e.grid(row=i, column=1, sticky="w", padx=8, pady=3)
-            e.insert(0, str(vals.get(key, "")))
-            entries[key] = e
+        # ---- field Entry biasa ----
+        row = 0
+        tk.Label(win, text="Kode Karyawan (unik):", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
+        kode_var = tk.StringVar(value=str(existing.get("kode", "")) if existing else "")
+        kode_entry = tk.Entry(win, textvariable=kode_var, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat")
+        kode_entry.grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        row += 1
 
-        # Auto-fill gaji_x_fee dari gaji
-        def auto_fee(*_):
-            try:
-                gaji = int(entries["gaji"].get().replace(",", "").replace(".", ""))
-                entries["gaji_x_fee"].delete(0, "end")
-                entries["gaji_x_fee"].insert(0, str(int(gaji * (1 + FEE_RATE))))
-            except ValueError:
-                pass
-        entries["gaji"].bind("<KeyRelease>", auto_fee)
+        tk.Label(win, text="Nama Karyawan:", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
+        nama_var = tk.StringVar(value=existing.get("nama", "") if existing else "")
+        tk.Entry(win, textvariable=nama_var, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat").grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        row += 1
+
+        tk.Label(win, text="Gaji (IDR):", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
+        gaji_var = tk.StringVar(value=_fmt_idr(existing.get("gaji", "")) if existing else "")
+        gaji_entry = _grouping_entry(win, gaji_var)
+        gaji_entry.grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        gaji_var.trace_add("write", lambda *a: _apply_grouping(gaji_var))
+        row += 1
+
+        tk.Label(win, text="Gaji + Fee (0.2%):", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
+        fee_var = tk.StringVar(value=_fmt_idr(int(existing.get("gaji", 0) * (1 + FEE_RATE))) if existing else "")
+        fee_label = tk.Label(win, textvariable=fee_var, bg="#161b22", fg="#d29922", font=("Consolas", 10, "bold"), anchor="w", width=38, relief="flat")
+        fee_label.grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        # auto hitung fee dari gaji
+        def _auto_fee(*_):
+            fee_var.set(_fmt_idr(int(_parse_idr(gaji_var.get()) * (1 + FEE_RATE))))
+        gaji_var.trace_add("write", _auto_fee)
+        row += 1
+
+        tk.Label(win, text="EVM/ETH Address:", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
+        eth_var = tk.StringVar(value=existing.get("eth", "") if existing else "")
+        tk.Entry(win, textvariable=eth_var, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat").grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        row += 1
+
+        tk.Label(win, text="Pintu:", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
+        pintu_var = tk.StringVar(value=existing.get("pintu", "") if existing else "")
+        tk.Entry(win, textvariable=pintu_var, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat").grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        row += 1
+
+        tk.Label(win, text="Jatuh Tempo:", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
+        jt_frame = tk.Frame(win, bg="#0d1117")
+        jt_frame.grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        jt_var = tk.StringVar(value=existing.get("jatuh_tempo", "") if existing else "")
+        jt_entry = tk.Entry(jt_frame, textvariable=jt_var, width=30, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat")
+        jt_entry.pack(side="left")
+        tk.Button(jt_frame, text="📅", command=lambda: self._calendar_dialog(jt_entry), bg="#30363d", fg="white", relief="flat").pack(side="left", padx=4)
+        row += 1
+
+        # ---- Komisi (multiline) ----
+        tk.Label(win, text="Komisi:", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="ne", padx=8, pady=4)
+        komisi_text = tk.Text(win, height=2, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat", font=("Consolas", 9))
+        komisi_text.grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        if existing and existing.get("komisi"):
+            komisi_text.insert("1.0", existing["komisi"])
+        row += 1
+
+        # ---- Notes (multiline besar) ----
+        tk.Label(win, text="Notes:", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="ne", padx=8, pady=4)
+        notes_text = tk.Text(win, height=6, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat", font=("Consolas", 9))
+        notes_text.grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        if existing and existing.get("notes"):
+            notes_text.insert("1.0", existing["notes"])
+        row += 1
 
         def save():
-            k = {}
-            for key, label in fields:
-                v = entries[key].get().strip()
-                if key in ("gaji", "gaji_x_fee"):
-                    try:
-                        k[key] = int(v.replace(",", "").replace(".", ""))
-                    except ValueError:
-                        k[key] = 0
-                else:
-                    k[key] = v
-            if not k.get("nama"):
+            nama = nama_var.get().strip()
+            if not nama:
                 messagebox.showwarning("Lengkap", "Nama wajib diisi!")
                 return
+            kode = kode_var.get().strip()
+            gaji = _parse_idr(gaji_var.get())
+            # kode unik (primary key ala MS Access)
+            if kode:
+                for x in self.karyawan:
+                    if str(x.get("kode", "")) == kode and (not existing or x["nama"] != existing["nama"]):
+                        messagebox.showwarning("Kode", f"Kode {kode} sudah dipakai karyawan lain!")
+                        return
+            else:
+                # auto-generate: max+1
+                kode = str(max([_parse_idr(str(x.get("kode", 0))) for x in self.karyawan], default=0) + 1)
+            k = {
+                "kode": int(kode) if kode.isdigit() else kode,
+                "nama": nama,
+                "gaji": gaji,
+                "gaji_x_fee": int(gaji * (1 + FEE_RATE)),
+                "eth": eth_var.get().strip(),
+                "pintu": pintu_var.get().strip(),
+                "jatuh_tempo": jt_var.get().strip(),
+                "komisi": komisi_text.get("1.0", "end").strip(),
+                "notes": notes_text.get("1.0", "end").strip(),
+            }
             if existing:
                 for i, x in enumerate(self.karyawan):
                     if x["nama"] == existing["nama"]:
@@ -346,11 +460,10 @@ class FastGajiApp:
             self.data["karyawan"] = self.karyawan
             save_data(self.data)
             self._refresh_list()
-            messagebox.showinfo("Sukses", "Karyawan tersimpan!")
+            messagebox.showinfo("Sukses", f"Karyawan tersimpan! (Kode: {k['kode']})")
             win.destroy()
 
-        tk.Button(win, text="💾 Simpan", command=save, bg="#1f6feb", fg="white",
-                  relief="flat", padx=16, pady=4).grid(row=len(fields), column=1, sticky="w", padx=8, pady=12)
+        tk.Button(win, text="💾 Simpan", command=save, bg="#1f6feb", fg="white", relief="flat", padx=20, pady=4).grid(row=row, column=1, sticky="w", padx=8, pady=12)
 
     def _edit_karyawan(self):
         sel = self.tree.selection()
@@ -369,8 +482,8 @@ class FastGajiApp:
         for k in self.karyawan:
             if filt and filt not in k["nama"].lower():
                 continue
-            usd = f"{k['gaji'] / self.kurs:,.2f}" if self.kurs else "-"
-            self.tree.insert("", "end", values=(k["nama"], f"{k['gaji']:,.0f}", usd))
+            usdt = f"{k['gaji'] * (1 + FEE_RATE) / self.kurs:,.2f}" if self.kurs else "-"
+            self.tree.insert("", "end", values=(k["nama"], _fmt_idr(k["gaji"]), usdt))
             total += k["gaji"]
         self.total_label.config(text=f"Total Karyawan: {len(self.karyawan)}  |  Total Gaji: Rp {total:,.0f}")
 
@@ -391,8 +504,8 @@ class FastGajiApp:
         lines = [
             f"Kode     : {k.get('kode', 0)}",
             f"Nama     : {k['nama']}",
-            f"Gaji     : Rp {k['gaji']:,.0f}",
-            f"Gaji+Fee : Rp {k.get('gaji_x_fee', k['gaji']):,.0f}",
+            f"Gaji     : Rp {_fmt_idr(k['gaji'])}",
+            f"Gaji+Fee : Rp {_fmt_idr(k.get('gaji_x_fee', k['gaji'] * (1 + FEE_RATE)))}",
             f"EVM/ETH  : {k.get('eth','') or '-'}",
             f"Pintu    : {k.get('pintu','') or '-'}",
             f"Jatuh    : {k.get('jatuh_tempo','') or '-'}",
@@ -406,10 +519,10 @@ class FastGajiApp:
         if not self.kurs:
             self.calc_label.config(text=f"{k['nama']}: kurs belum ada — tunggu sebentar...")
             return
-        usdt = k["gaji"] / self.kurs
+        usdt = k["gaji"] * (1 + FEE_RATE) / self.kurs
         self.calc_label.config(
-            text=f"{k['nama']}: Rp {k['gaji']:,.0f} ÷ {self.kurs:,.0f} = {usdt:,.2f} USDT "
-                 f"(kurs P2P +0.2%)")
+            text=f"{k['nama']}: Rp {_fmt_idr(k['gaji'])} +0.2% → {usdt:,.2f} USDT "
+                 f"(kurs P2P BUY {self.kurs:,.0f})")
 
     def _refresh_kurs_async(self):
         def worker():
@@ -424,19 +537,6 @@ class FastGajiApp:
                 self.kurs = 17800 * (1 + FEE_RATE)
         threading.Thread(target=worker, daemon=True).start()
 
-    def _hitung(self):
-        if not self.kurs:
-            messagebox.showwarning("Kurs", "Kurs belum siap. Coba lagi.")
-            return
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showwarning("Pilih", "Pilih karyawan dulu!")
-            return
-        nama = self.tree.item(sel[0])["values"][0]
-        k = next(x for x in self.karyawan if x["nama"] == nama)
-        usdt = k["gaji"] / self.kurs
-        messagebox.showinfo("Hitung USDT",
-            f"{k['nama']}\nGaji: Rp {k['gaji']:,.0f}\nKurs (+2%): Rp {self.kurs:,.0f}\n\n= {usdt:,.2f} USDT")
 
     def _save_key_dialog(self):
         if not HAVE_CRYPTO:
@@ -502,7 +602,7 @@ class FastGajiApp:
         if not k.get("eth"):
             messagebox.showwarning("Alamat", f"{nama} tidak punya address EVM!")
             return
-        usdt = k["gaji"] / self.kurs
+        usdt = k["gaji"] * (1 + FEE_RATE) / self.kurs
         if not messagebox.askyesno("Konfirmasi",
             f"Kirim {usdt:,.2f} USDT ke:\n{k['eth']}\n({nama})\n\nLANJUT?"):
             return
@@ -543,7 +643,7 @@ class FastGajiApp:
                 w.writerow(["Kode", "Nama", "Gaji IDR", "Gaji+Fee", "USDT", "EVM/ETH", "Pintu", "Komisi", "Notes"])
                 for k in self.karyawan:
                     usdt = k["gaji"] / self.kurs if self.kurs else 0
-                    w.writerow([k.get("kode",0), k["nama"], k["gaji"], k.get("gaji_x_fee", k["gaji"]), round(usdt, 2), k.get("eth",""), k.get("pintu",""), k.get("komisi",""), k.get("notes","")])
+                    w.writerow([k.get("kode",0), k["nama"], k["gaji"], k.get("gaji_x_fee", k["gaji"]), round(k["gaji"] * (1 + FEE_RATE) / self.kurs, 2) if self.kurs else "", k.get("eth",""), k.get("pintu",""), k.get("komisi",""), k.get("notes","")])
             messagebox.showinfo("Sukses", "CSV tersimpan: " + path)
         except Exception as e:
             messagebox.showerror("Error", str(e))
