@@ -8,7 +8,7 @@ Fitur:
 - Private key LOKAL terenkripsi (AES + password)
 - Histori pembayaran
 """
-import os, sys, json, base64, hashlib, threading, queue
+import os, sys, json, base64, hashlib, threading, queue, sqlite3
 from datetime import datetime
 from tkinter import ttk, messagebox, filedialog
 import tkinter as tk
@@ -28,8 +28,129 @@ except ImportError:
     HAVE_WEB3 = False
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__)) if getattr(sys, 'frozen', False) else os.getcwd()
-DATA_FILE = os.path.join(APP_DIR, "fastgaji_data.json")
-KEY_FILE = os.path.join(APP_DIR, "fastgaji_key.enc")
+# kalau frozen (EXE), data dir = folder EXE (biar bisa nulis DB), DB bundled = _MEIPASS
+if getattr(sys, 'frozen', False):
+    DATA_DIR = os.path.dirname(sys.executable)   # folder EXE (bisa nulis)
+    BUNDLE_DIR = getattr(sys, '_MEIPASS', DATA_DIR)  # file bundled (read-only)
+else:
+    DATA_DIR = os.getcwd()
+    BUNDLE_DIR = os.getcwd()
+DATA_FILE = os.path.join(DATA_DIR, "fastgaji_data.json")  # legacy (JSON)
+DB_FILE = os.path.join(DATA_DIR, "fastgaji.db")           # SQLite (utama, di folder EXE)
+KEY_FILE = os.path.join(DATA_DIR, "fastgaji_key.enc")
+_BUNDLED_DB = os.path.join(BUNDLE_DIR, "fastgaji.db")     # DB bawaan dari EXE
+
+# ================= SQLITE DATABASE =================
+def _db():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    # pertama kali: copy DB bawaan (dari bundle EXE) ke folder EXE kalau belum ada
+    if not os.path.exists(DB_FILE) and os.path.exists(_BUNDLED_DB) and _BUNDLED_DB != DB_FILE:
+        try:
+            import shutil
+            shutil.copy2(_BUNDLED_DB, DB_FILE)
+        except Exception:
+            pass
+    conn = _db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS karyawan (
+        kode INTEGER PRIMARY KEY,
+        nama TEXT NOT NULL,
+        gaji INTEGER DEFAULT 0,
+        gaji_x_fee INTEGER DEFAULT 0,
+        eth TEXT DEFAULT '',
+        pintu TEXT DEFAULT '',
+        jatuh_tempo TEXT DEFAULT '',
+        komisi TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        bank TEXT DEFAULT '',
+        norek TEXT DEFAULT '',
+        namarek TEXT DEFAULT '',
+        email TEXT DEFAULT '',
+        notelp TEXT DEFAULT '',
+        status INTEGER DEFAULT 0,
+        ewallet TEXT DEFAULT '',
+        btc TEXT DEFAULT '',
+        ovo TEXT DEFAULT ''
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS histori (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kode_karyawan INTEGER,
+        nama TEXT,
+        gaji_idr INTEGER,
+        usdt REAL,
+        tanggal TEXT,
+        txid TEXT,
+        waktu TEXT,
+        notes TEXT
+    )""")
+    conn.commit()
+    conn.close()
+
+def db_load_all():
+    """Baca semua karyawan + histori dari SQLite."""
+    init_db()
+    conn = _db()
+    rows = conn.execute("SELECT * FROM karyawan ORDER BY kode").fetchall()
+    karyawan = []
+    for r in rows:
+        k = dict(r)
+        karyawan.append(k)
+    hist = conn.execute("SELECT kode_karyawan, nama, gaji_idr, usdt, tanggal, txid, waktu FROM histori ORDER BY id DESC LIMIT 500").fetchall()
+    histori = [dict(h) for h in hist]
+    conn.close()
+    return karyawan, histori
+
+def db_upsert_karyawan(k):
+    """Insert atau update karyawan by kode (PRIMARY KEY)."""
+    conn = _db()
+    conn.execute("""INSERT INTO karyawan (kode, nama, gaji, gaji_x_fee, eth, pintu, jatuh_tempo, komisi, notes,
+                    bank, norek, namarek, email, notelp, status, ewallet, btc, ovo)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(kode) DO UPDATE SET
+                        nama=excluded.nama, gaji=excluded.gaji, gaji_x_fee=excluded.gaji_x_fee,
+                        eth=excluded.eth, pintu=excluded.pintu, jatuh_tempo=excluded.jatuh_tempo,
+                        komisi=excluded.komisi, notes=excluded.notes, bank=excluded.bank, norek=excluded.norek,
+                        namarek=excluded.namarek, email=excluded.email, notelp=excluded.notelp,
+                        status=excluded.status, ewallet=excluded.ewallet, btc=excluded.btc, ovo=excluded.ovo""",
+                 (k.get("kode", 0), k.get("nama",""), k.get("gaji",0), k.get("gaji_x_fee",0),
+                  k.get("eth",""), k.get("pintu",""), k.get("jatuh_tempo",""),
+                  k.get("komisi",""), k.get("notes",""), k.get("bank",""), k.get("norek",""),
+                  k.get("namarek",""), k.get("email",""), k.get("notelp",""), k.get("status",0),
+                  k.get("ewallet",""), k.get("btc",""), k.get("ovo","")))
+    conn.commit()
+    conn.close()
+
+def db_delete_karyawan(kode):
+    conn = _db()
+    conn.execute("DELETE FROM karyawan WHERE kode=?", (kode,))
+    conn.commit()
+    conn.close()
+
+def db_add_histori(h):
+    conn = _db()
+    conn.execute("INSERT INTO histori (kode_karyawan, nama, gaji_idr, usdt, tanggal, txid, waktu) VALUES (?,?,?,?,?,?,?)",
+                 (h.get("kode_karyawan",0), h.get("nama",""), h.get("gaji_idr",0), h.get("usdt",0),
+                  h.get("tanggal",""), h.get("txid",""), h.get("waktu","")))
+    conn.commit()
+    conn.close()
+
+def db_histori_by_karyawan(kode, limit=200):
+    """Histori gaji per karyawan (dari DB asli)."""
+    init_db()
+    conn = _db()
+    rows = conn.execute("SELECT gaji_idr, tanggal, notes FROM histori WHERE kode_karyawan=? ORDER BY id DESC LIMIT ?",
+                        (kode, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def db_next_kode():
+    conn = _db()
+    r = conn.execute("SELECT MAX(kode) as m FROM karyawan").fetchone()
+    conn.close()
+    return (r["m"] or 0) + 1
 
 BSC_RPC = "https://bnb-mainnet.g.alchemy.com/v2/alch_KgymfWpXkADRUuQzAtwcD"
 USDT_CA = "0x55d398326f99059fF775485246999027B3197955"
@@ -59,6 +180,30 @@ def _parse_idr(s):
     except ValueError:
         return 0
 
+def _parse_jatuh_tempo(s):
+    """'11-Aug-25' -> (datetime, hari_selisih). Return None kalau gak valid."""
+    if not s:
+        return None
+    try:
+        parts = str(s).strip().split("-")
+        if len(parts) != 3 or not parts[0].isdigit():
+            return None
+        months = {"Jan":1,"Feb":2,"Mar":3,"Apr":4,"Mei":5,"Jun":6,"Jul":7,"Agu":8,"Sep":9,"Okt":10,"Nov":11,"Des":12,
+                  "jan":1,"feb":2,"mar":3,"apr":4,"mei":5,"jun":6,"jul":7,"agu":8,"sep":9,"okt":10,"nov":11,"des":12}
+        m = months.get(parts[1])
+        if not m:
+            return None
+        y = int(parts[2])
+        if y < 100:
+            y += 2000
+        d = datetime(y, m, int(parts[0]))
+        today = datetime.now()
+        # pakai tanggal polos (tanpa jam) biar selisih hari akurat
+        t0 = datetime(today.year, today.month, today.day)
+        return d, (d - t0).days
+    except Exception:
+        return None
+
 def _grouping_entry(parent, textvariable):
     """Entry dengan auto-grouping ribuan saat mengetik."""
     from tkinter import Entry
@@ -73,34 +218,7 @@ def _apply_grouping(var):
         var.set(_fmt_idr(raw))
 
 # ================= DATA DEFAULT (dari DB karyawan) =================
-DEFAULT_KARYAWAN = [
-    {"nama": "HARTONI", "kode": 249, "gaji": 15000852, "gaji_x_fee": 15030854, "eth": "0x91043400624D998eF3cE5A6772176918d9E05046", "pintu": "@hartoni729", "jatuh_tempo": "11-Aug-25", "komisi": "100/120/130/150/200", "notes": "1may2026=15jt/14 @sep2025//13jt @jan202512jt @july2024gaji masuk 30-oct-2019lsg 2 bln 6jt"},
-    {"nama": "BOBI FIRMANSYAH", "kode": 181, "gaji": 20000777, "gaji_x_fee": 20040779, "eth": "0x18d5e7965c3d2c579d0025d5a39891fdb6820c82", "pintu": "@bobbyfirmansyah", "jatuh_tempo": "11-Oct-24", "komisi": "85/145/200/270/350/450", "notes": "3-april-2026=20jt / 9july2025=11jt kerja mulai 11 oct 2024"},
-    {"nama": "NURHADI GUSNAIN", "kode": 324, "gaji": 11000101, "gaji_x_fee": 11022101, "eth": "0x031F52Aa40aB6e8925dB0823626eF7C15f4310f2", "pintu": "@nurhadi.gusnain916", "jatuh_tempo": "19-Jun-25", "komisi": "2thn=7k usd", "notes": "10jan2026=11jt//start-19june2025~spv malam"},
-    {"nama": "HERIY HARYADI", "kode": 0, "gaji": 12000000, "gaji_x_fee": 12024000, "eth": "0x8FFf385A30c91548C519Be4eC92E576872a0c650", "pintu": "@hery65664597", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "YOGI ANDIKA", "kode": 0, "gaji": 12000000, "gaji_x_fee": 12024000, "eth": "0x12AD8a8c3aA7c1F902B2Cb2BbB2b21c5F5b5D34a", "pintu": "@ya5666913602", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "ACEN", "kode": 0, "gaji": 30123789, "gaji_x_fee": 30159789, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "CELVIN APRIO", "kode": 0, "gaji": 5000333, "gaji_x_fee": 5005333, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "TENGKU REZA ERIANDA", "kode": 0, "gaji": 5123789, "gaji_x_fee": 5128789, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "WIVIANY ELLEN", "kode": 0, "gaji": 4500564, "gaji_x_fee": 4505564, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "M RIZKY PRATAMA", "kode": 0, "gaji": 5000000, "gaji_x_fee": 5005000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "SHEREN", "kode": 0, "gaji": 4000000, "gaji_x_fee": 4004000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "JOURDAN", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "MUHAMMAD SAFIUDIN", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "TEGAR", "kode": 0, "gaji": 4000000, "gaji_x_fee": 4004000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "ERICK", "kode": 0, "gaji": 3800000, "gaji_x_fee": 3803800, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "HENDY HALIM", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "JIU CHING", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "STEVEN ZEBUA", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "JUSTIN LIMORGEN", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "RIDUAN HAMID", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "M RAFLY AL RISYA", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "KELVIN ADINATA", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "M FARIZ RAMADHAN", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "JIMMY CHANG", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "SANDY YULPIANDA", "kode": 0, "gaji": 2500000, "gaji_x_fee": 2502500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-    {"nama": "MUHAMMAD VADRIZAL", "kode": 0, "gaji": 2500000, "gaji_x_fee": 2502500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
-]
+DEFAULT_KARYAWAN = []  # data asli dari DB Access (fastgaji.db)
 
 # ================= CRYPTO KEY (AES-GCM via hashlib fallback) =================
 def _derive_key(password: str, salt: bytes) -> bytes:
@@ -143,14 +261,48 @@ def load_key(password: str) -> str:
 
 # ================= DATA KARYAWAN =================
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"karyawan": DEFAULT_KARYAWAN, "histori": []}
+    """Baca dari SQLite; kalau kosong, seed dari data default."""
+    karyawan, histori = db_load_all()
+    if not karyawan:
+        # seed pertama kali — kode 0 di-assign otomatis unik
+        next_k = 1
+        used = set()
+        for k in DEFAULT_KARYAWAN:
+            kd = k.get("kode", 0)
+            if not kd or kd in used:
+                while next_k in used or next_k == 0:
+                    next_k += 1
+                kd = next_k
+            k["kode"] = kd
+            used.add(kd)
+            db_upsert_karyawan(k)
+        karyawan, histori = db_load_all()
+    return {"karyawan": karyawan, "histori": histori}
 
 def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    """Simpan semua karyawan + histori ke SQLite."""
+    init_db()
+    # upsert semua karyawan (by kode)
+    seen = set()
+    for k in data["karyawan"]:
+        kode = k.get("kode", 0)
+        if not kode:
+            kode = db_next_kode()
+            k["kode"] = kode
+        db_upsert_karyawan(k)
+        seen.add(kode)
+    # hapus karyawan yang gak ada lagi di list
+    conn = _db()
+    conn.execute("DELETE FROM karyawan WHERE kode NOT IN (%s)" % ",".join("?" * len(seen)) if seen else "DELETE FROM karyawan")
+    conn.commit()
+    conn.close()
+    # histori
+    conn = _db()
+    conn.execute("DELETE FROM histori")
+    conn.commit()
+    conn.close()
+    for h in data["histori"]:
+        db_add_histori(h)
 
 # ================= KURS BINANCE P2P =================
 def get_p2p_rate():
@@ -218,6 +370,10 @@ class FastGajiApp:
         self.tree.column("nama", width=200)
         self.tree.column("gaji", width=110, anchor="e")
         self.tree.column("usd", width=100, anchor="e")
+        # tag: merah = jatuh tempo dekat/telat, kuning = jatuh tempo hari ini
+        self.tree.tag_configure("red", background="#7d1a1a", foreground="#ffd7d7")
+        self.tree.tag_configure("soon", background="#5a3a00", foreground="#ffe8b3")
+        self.tree.tag_configure("today", background="#7d5a00", foreground="#fff2cc")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
@@ -320,36 +476,134 @@ class FastGajiApp:
             save_data(self.data)
             self._refresh_list()
 
+    def _test_send(self, address, parent_win):
+        """Kirim 1 USDT test ke address — verifikasi address benar."""
+        if not HAVE_WEB3:
+            messagebox.showwarning("Lib", "web3.py belum terinstall!")
+            return
+        if not address or len(address) != 42 or not address.startswith("0x"):
+            messagebox.showwarning("Alamat", "Address EVM gak valid!\nFormat: 0x... (42 karakter)")
+            return
+        if not self.private_key:
+            messagebox.showwarning("Key", "Buka private key dulu! (tombol 🔓 Buka Key)")
+            return
+        if not self.kurs and self.kurs != 0:
+            # kurs belum penting untuk test — lanjut aja
+            pass
+        if not messagebox.askyesno("Konfirmasi Test",
+            f"Kirim 1.00 USDT (test) ke:\n{address}\n\nIni TRANSAKSI SUNGGAHAN — butuh fee BNB kecil!\nLanjut?"):
+            return
+        try:
+            w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+            acct = w3.eth.account.from_key(self.private_key)
+            contract = w3.eth.contract(address=USDT_CA, abi=USDT_ABI)
+            amount = int(1 * 10**18)  # 1 USDT
+            tx = contract.functions.transfer(address, amount).build_transaction({
+                "from": acct.address, "nonce": w3.eth.get_transaction_count(acct.address),
+                "gas": 100000, "gasPrice": w3.eth.gas_price})
+            signed = w3.eth.account.sign_transaction(tx, self.private_key)
+            txid = w3.eth.send_raw_transaction(signed.rawTransaction)
+            tx_hex = w3.to_hex(txid)
+            # simpan ke histori test
+            self.histori.append({"nama": "(TEST ADDRESS)", "usdt": 1.0, "txid": tx_hex,
+                                  "waktu": datetime.now().strftime("%Y-%m-%d %H:%M")})
+            self.data["histori"] = self.histori
+            save_data(self.data)
+            self._refresh_hist()
+            messagebox.showinfo("TEST TERKIRIM! ✅",
+                f"1 USDT test terkirim ke:\n{address}\n\nTx: {tx_hex}\n\nKalau masuk = address BENAR!\nKalau gak masuk = salah!")
+            try:
+                parent_win.lift()
+            except Exception:
+                pass
+        except Exception as e:
+            messagebox.showerror("Gagal", str(e)[:200])
+
     def _calendar_dialog(self, entry):
-        """Dialog pilih tanggal: Tanggal/Bulan/Tahun."""
+        """Kalender bulanan: grid klik-tanggal (gampang dipakai!)."""
+        import calendar as _cal
         win = tk.Toplevel(self.root)
         win.title("📅 Pilih Tanggal")
         win.configure(bg="#0d1117")
-        from tkinter import ttk as _ttk
-        vars = {}
-        rows = [("tanggal", list(range(1, 32))), ("bulan", ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]),
-                ("tahun", list(range(2020, 2036)))]
-        for i, (key, opts) in enumerate(rows):
-            tk.Label(win, text=key.title() + ":", bg="#0d1117", fg="#e6edf3").grid(row=i, column=0, padx=8, pady=4)
-            cb = _ttk.Combobox(win, values=opts, state="readonly", width=12)
-            cb.grid(row=i, column=1, padx=8, pady=4)
-            vars[key] = cb
-        # default dari entry yang ada
-        cur = entry.get().strip()
-        if cur:
-            parts = cur.replace("-", " ").split()
-            if len(parts) == 3:
-                if parts[0].isdigit(): vars["tanggal"].set(parts[0])
-                if parts[1].isdigit(): vars["bulan"].set(["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"][int(parts[1]) - 1])
-                elif parts[1] in vars["bulan"]["values"]: vars["bulan"].set(parts[1])
-                if parts[2].isdigit(): vars["tahun"].set(parts[2])
-        def ok():
-            t, b, y = vars["tanggal"].get(), vars["bulan"].get(), vars["tahun"].get()
-            if t and b and y:
-                entry.delete(0, "end")
-                entry.insert(0, f"{t}-{b}-{y[-2:]}")
+        win.resizable(False, False)
+
+        # state kalender
+        today = datetime.now()
+        cur_y, cur_m = today.year, today.month
+        # ambil tanggal existing kalau ada (format 11-Aug-25)
+        sel_d = None
+        cur_val = entry.get().strip()
+        if cur_val:
+            try:
+                parts = cur_val.split("-")
+                if len(parts) == 3 and parts[0].isdigit():
+                    months = {"Jan":1,"Feb":2,"Mar":3,"Apr":4,"Mei":5,"Jun":6,"Jul":7,"Agu":8,"Sep":9,"Okt":10,"Nov":11,"Des":12}
+                    m = months.get(parts[1], today.month)
+                    y = 2000 + int(parts[2]) if len(parts[2]) == 2 else int(parts[2])
+                    sel_d = int(parts[0])
+                    cur_y, cur_m = y, m
+            except Exception:
+                pass
+
+        # header
+        head = tk.Frame(win, bg="#0d1117")
+        head.pack(fill="x", padx=8, pady=6)
+        tk.Button(head, text="◀", command=lambda: _change(-1), bg="#30363d", fg="white",
+                  relief="flat", width=3).pack(side="left")
+        month_label = tk.Label(head, text="", bg="#0d1117", fg="#58a6ff",
+                               font=("Segoe UI", 12, "bold"), width=16)
+        month_label.pack(side="left", expand=True)
+        tk.Button(head, text="▶", command=lambda: _change(1), bg="#30363d", fg="white",
+                  relief="flat", width=3).pack(side="right")
+
+        # grid hari
+        grid = tk.Frame(win, bg="#0d1117")
+        grid.pack(padx=8, pady=(0, 6))
+        days = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"]
+        for i, d in enumerate(days):
+            tk.Label(grid, text=d, bg="#0d1117", fg="#8b949e", width=5,
+                     font=("Segoe UI", 9, "bold")).grid(row=0, column=i, padx=1, pady=1)
+        cells = {}
+        for r in range(1, 7):
+            for c in range(7):
+                lbl = tk.Label(grid, text="", bg="#161b22", fg="#e6edf3", width=5, height=2,
+                               font=("Segoe UI", 9), cursor="hand2")
+                lbl.grid(row=r, column=c, padx=1, pady=1)
+                cells[(r, c)] = lbl
+
+        def _render():
+            month_label.config(text=f"{['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][cur_m-1]} {cur_y}")
+            cal = _cal.Calendar(firstweekday=0)  # Senin dulu
+            dates = cal.monthdatescalendar(cur_y, cur_m)
+            for r in range(6):
+                for c in range(7):
+                    lbl = cells[(r, c)]
+                    if r < len(dates):
+                        d = dates[r][c]
+                        in_month = d.month == cur_m
+                        lbl.config(text=str(d.day),
+                                   fg="#e6edf3" if in_month else "#484f58",
+                                   bg="#1f6feb" if (in_month and d.day == sel_d and sel_d) else "#161b22")
+                        lbl.bind("<Button-1>", lambda e, dd=d: _pick(dd))
+                    else:
+                        lbl.config(text="", bg="#161b22")
+
+        def _change(delta):
+            nonlocal cur_y, cur_m
+            cur_m += delta
+            if cur_m < 1:
+                cur_m, cur_y = 12, cur_y - 1
+            elif cur_m > 12:
+                cur_m, cur_y = 1, cur_y + 1
+            _render()
+
+        def _pick(d):
+            months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+            entry.delete(0, "end")
+            entry.insert(0, f"{d.day}-{months[d.month-1]}-{str(d.year)[-2:]}")
             win.destroy()
-        tk.Button(win, text="OK", command=ok, bg="#1f6feb", fg="white", relief="flat", padx=16).grid(row=3, column=1, sticky="w", padx=8, pady=10)
+
+        _render()
 
     def _edit_dialog(self, existing):
         """Dialog tambah/edit karyawan: grouping, kalender, multiline, kode unik."""
@@ -389,8 +643,13 @@ class FastGajiApp:
         row += 1
 
         tk.Label(win, text="EVM/ETH Address:", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
+        eth_frame = tk.Frame(win, bg="#0d1117")
+        eth_frame.grid(row=row, column=1, sticky="w", padx=8, pady=4)
         eth_var = tk.StringVar(value=existing.get("eth", "") if existing else "")
-        tk.Entry(win, textvariable=eth_var, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat").grid(row=row, column=1, sticky="w", padx=8, pady=4)
+        eth_entry = tk.Entry(eth_frame, textvariable=eth_var, width=45, bg="#161b22", fg="#e6edf3", insertbackground="#e6edf3", relief="flat")
+        eth_entry.pack(side="left")
+        tk.Button(eth_frame, text="🧪 SEND 1 USDT", command=lambda: self._test_send(eth_var.get().strip(), win),
+                  bg="#8a5a00", fg="white", relief="flat", padx=8).pack(side="left", padx=6)
         row += 1
 
         tk.Label(win, text="Pintu:", bg="#0d1117", fg="#e6edf3", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="e", padx=8, pady=4)
@@ -478,14 +737,31 @@ class FastGajiApp:
     def _refresh_list(self):
         self.tree.delete(*self.tree.get_children())
         filt = self.filter_var.get().lower()
-        total = 0
+
+        # hitung jatuh tempo + sort: yang paling dekat gajian di ATAS
+        rows = []
         for k in self.karyawan:
             if filt and filt not in k["nama"].lower():
                 continue
+            jt = _parse_jatuh_tempo(k.get("jatuh_tempo", ""))
+            days_left = jt[1] if jt else 99999  # tanpa tanggal = paling bawah
+            rows.append((days_left, k))
+        rows.sort(key=lambda x: x[0])  # ascending: dekat/telat di atas
+
+        total = 0
+        for days_left, k in rows:
             usdt = f"{k['gaji'] * (1 + FEE_RATE) / self.kurs:,.2f}" if self.kurs else "-"
-            self.tree.insert("", "end", values=(k["nama"], _fmt_idr(k["gaji"]), usdt))
+            tag = ""
+            if days_left != 99999:
+                if days_left < 0:
+                    tag = "red"       # TELAT (sudah lewat jatuh tempo)
+                elif days_left == 0:
+                    tag = "today"     # JATUH TEMPO HARI INI
+                elif days_left <= 7:
+                    tag = "soon"      # dekat gajian (1-7 hari lagi)
+            self.tree.insert("", "end", values=(k["nama"], _fmt_idr(k["gaji"]), usdt), tags=(tag,) if tag else ())
             total += k["gaji"]
-        self.total_label.config(text=f"Total Karyawan: {len(self.karyawan)}  |  Total Gaji: Rp {total:,.0f}")
+        self.total_label.config(text=f"Total Karyawan: {len(rows)}  |  Total Gaji: Rp {total:,.0f}")
 
     def _on_select(self, _):
         sel = self.tree.selection()
@@ -506,6 +782,7 @@ class FastGajiApp:
             f"Nama     : {k['nama']}",
             f"Gaji     : Rp {_fmt_idr(k['gaji'])}",
             f"Gaji+Fee : Rp {_fmt_idr(k.get('gaji_x_fee', k['gaji'] * (1 + FEE_RATE)))}",
+            f"Bank     : {k.get('bank','') or '-'} | {k.get('norek','') or ''}",
             f"EVM/ETH  : {k.get('eth','') or '-'}",
             f"Pintu    : {k.get('pintu','') or '-'}",
             f"Jatuh    : {k.get('jatuh_tempo','') or '-'}",
@@ -514,6 +791,28 @@ class FastGajiApp:
         ]
         self.detail_text.insert("1.0", "\n".join(lines))
         self.detail_text.config(state="disabled")
+        # tampilkan histori gaji per karyawan
+        try:
+            hist = db_histori_by_karyawan(k.get("kode", 0), limit=50)
+            self.hist_text.config(state="normal")
+            self.hist_text.delete("1.0", "end")
+            if hist:
+                total = sum(h.get("gaji_idr", 0) for h in hist)
+                self.hist_text.insert("end", f"📜 HISTORI GAJI: {k['nama']} (total tampil {len(hist)})\n")
+                self.hist_text.insert("end", f"💰 Total (50 terakhir): Rp {_fmt_idr(total)}\n{'='*45}\n\n")
+                for h in hist:
+                    tgl = h.get("tanggal", "") or ""
+                    gaji = _fmt_idr(h.get("gaji_idr", 0))
+                    notes = (h.get("notes", "") or "")[:80]
+                    self.hist_text.insert("end", f"{tgl} | Rp {gaji}")
+                    if notes:
+                        self.hist_text.insert("end", f" | {notes}")
+                    self.hist_text.insert("end", "\n")
+            else:
+                self.hist_text.insert("end", "Belum ada histori gaji.")
+            self.hist_text.config(state="disabled")
+        except Exception:
+            pass
 
     def _update_calc(self, k):
         if not self.kurs:
