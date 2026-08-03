@@ -21,12 +21,9 @@ jobs:
           pip install pyinstaller pycryptodome web3 requests
 
       - name: Build EXE
+        shell: cmd
         run: |
-          pyinstaller --onefile --windowed --name FastGaji ^
-            --add-data "fastgaji.db;." ^
-            --collect-all web3 ^
-            --collect-all eth_utils ^
-            fastgaji.py
+          pyinstaller --onefile --windowed --name FastGaji --add-data "fastgaji.db;." --collect-all web3 --collect-all eth_utils fastgaji.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

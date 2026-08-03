@@ -653,7 +653,7 @@ class FastGajiApp:
             dates = cal.monthdatescalendar(cur_y, cur_m)
             for r in range(6):
                 for c in range(7):
-                    lbl = cells[(r, c)]
+                    lbl = cells[(r + 1, c)]  # row 0 = header hari, grid mulai row 1!
                     if r < len(dates):
                         d = dates[r][c]
                         in_month = d.month == cur_m
