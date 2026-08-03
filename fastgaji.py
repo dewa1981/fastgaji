@@ -21,11 +21,21 @@ try:
 except ImportError:
     HAVE_CRYPTO = False
 
-try:
-    from web3 import Web3
-    HAVE_WEB3 = True
-except ImportError:
-    HAVE_WEB3 = False
+# web3 di-import LAZY (di dalam fungsi) biar app tetap kebuka
+# walau library web3 bermasalah di bundle PyInstaller!
+HAVE_WEB3 = False
+def _get_web3():
+    """Import web3 lazy — hanya saat dibutuhkan (bayar/balance/test)."""
+    global HAVE_WEB3
+    try:
+        from web3 import Web3
+        HAVE_WEB3 = True
+        return Web3
+    except Exception as e:
+        HAVE_WEB3 = False
+        messagebox.showerror("Web3 Error",
+            f"Library web3 gagal dimuat:\n{e}\n\nFitur bayar/balance nonaktif, tapi app tetap bisa dipakai.")
+        return None
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__)) if getattr(sys, 'frozen', False) else os.getcwd()
 # kalau frozen (EXE), data dir = folder EXE (biar bisa nulis DB), DB bundled = _MEIPASS
@@ -509,8 +519,9 @@ class FastGajiApp:
 
     def _update_balance(self):
         """Cek balance USDT + BNB dari key yang dibuka."""
-        if not HAVE_WEB3:
-            self.balance_label.config(text="⚠️ web3 belum terinstall")
+        Web3 = _get_web3()
+        if not Web3:
+            self.balance_label.config(text="⚠️ web3 error")
             return
         if not self.private_key:
             self.balance_label.config(text="💰 Balance: buka key dulu 🔓")
@@ -544,8 +555,8 @@ class FastGajiApp:
 
     def _test_send(self, address, parent_win):
         """Kirim 1 USDT test ke address — verifikasi address benar."""
-        if not HAVE_WEB3:
-            messagebox.showwarning("Lib", "web3.py belum terinstall!")
+        Web3 = _get_web3()
+        if not Web3:
             return
         if not address or len(address) != 42 or not address.startswith("0x"):
             messagebox.showwarning("Alamat", "Address EVM gak valid!\nFormat: 0x... (42 karakter)")
@@ -1081,8 +1092,8 @@ class FastGajiApp:
         tk.Button(win, text="Buka", command=load, bg="#1f6feb", fg="white", relief="flat").grid(row=1, column=1, pady=10)
 
     def _bayar(self):
-        if not HAVE_WEB3:
-            messagebox.showwarning("Lib", "web3.py belum terinstall! Jalankan: pip install web3")
+        Web3 = _get_web3()
+        if not Web3:
             return
         if not self.private_key:
             messagebox.showwarning("Key", "Buka private key dulu! (tombol 🔓 Buka Key)")
@@ -1149,6 +1160,16 @@ class FastGajiApp:
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = FastGajiApp(root)
-    root.mainloop()
+    try:
+        root = tk.Tk()
+        app = FastGajiApp(root)
+        root.mainloop()
+    except Exception as e:
+        try:
+            import tkinter.messagebox as mb
+            mb.showerror("FASTGAJI Error",
+                f"Terjadi error saat buka app:\n\n{e}\n\n"
+                f"Laporkan ke Chokdi 🐷 dengan screenshot error ini!")
+        except Exception:
+            pass
+        raise
