@@ -41,32 +41,32 @@ USDT_ABI = [
 
 # ================= DATA DEFAULT (dari DB karyawan) =================
 DEFAULT_KARYAWAN = [
-    {"nama": "HARTONI", "gaji": 15000852, "bank": "BCA", "norek": "3343545463", "ewallet": "3901085364883333", "pintu": "@hartoni729", "eth": "0x91043400624D998eF3cE5A6772176918d9E05046", "bnb": "bnb1fm4ggjckrdk8f23ajv6yfx3k7vhrdck8qp6a6"},
-    {"nama": "BOBI FIRMANSYAH", "gaji": 20000777, "bank": "BCA", "norek": "8285055705", "ewallet": "39358081260896357", "pintu": "@bobbyfirmansyah", "eth": "0x18d5e7965c3d2c579d0025d5a39891fdb6820c82", "bnb": "bnb1fm4ggskvrdk8f23xy6yfx3k7vhvdcx8qp5a6"},
-    {"nama": "NURHADI GUSNAIN", "gaji": 11000101, "bank": "BCA", "norek": "5465653545", "ewallet": "", "pintu": "@nurhadi.gusnain916", "eth": "0x031F52Aa40aB6e8925dB0823626eF7C15f4310f2", "bnb": ""},
-    {"nama": "HERIY HARYADI", "gaji": 12000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "@hery65664597", "eth": "0x8FFf385A30c91548C519Be4eC92E576872a0c650", "bnb": ""},
-    {"nama": "YOGI ANDIKA", "gaji": 12000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "@ya5666913602", "eth": "0x12AD8a8c3aA7c1F902B2Cb2BbB2b21c5F5b5D34a", "bnb": ""},
-    {"nama": "ACEN", "gaji": 30123789, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "CELVIN APRIO", "gaji": 5000333, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "TENGKU REZA ERIANDA", "gaji": 5123789, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "WIVIANY ELLEN", "gaji": 4500564, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "M RIZKY PRATAMA", "gaji": 5000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "SHEREN", "gaji": 4000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "JOURDAN", "gaji": 3500000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "MUHAMMAD SAFIUDIN", "gaji": 3500000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "TEGAR", "gaji": 4000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "ERICK", "gaji": 3800000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "HENDY HALIM", "gaji": 3500000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "JIU CHING", "gaji": 3500000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "STEVEN ZEBUA", "gaji": 3500000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "JUSTIN LIMORGEN", "gaji": 3500000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "RIDUAN HAMID", "gaji": 3000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "M RAFLY AL RISYA", "gaji": 3000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "KELVIN ADINATA", "gaji": 3000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "M FARIZ RAMADHAN", "gaji": 3000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "JIMMY CHANG", "gaji": 3000000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "SANDY YULPIANDA", "gaji": 2500000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
-    {"nama": "MUHAMMAD VADRIZAL", "gaji": 2500000, "bank": "BCA", "norek": "", "ewallet": "", "pintu": "", "eth": "", "bnb": ""},
+    {"nama": "HARTONI", "kode": 249, "gaji": 15000852, "gaji_x_fee": 15030854, "eth": "0x91043400624D998eF3cE5A6772176918d9E05046", "pintu": "@hartoni729", "jatuh_tempo": "11-Aug-25", "komisi": "100/120/130/150/200", "notes": "1may2026=15jt/14 @sep2025//13jt @jan202512jt @july2024gaji masuk 30-oct-2019lsg 2 bln 6jt"},
+    {"nama": "BOBI FIRMANSYAH", "kode": 181, "gaji": 20000777, "gaji_x_fee": 20040779, "eth": "0x18d5e7965c3d2c579d0025d5a39891fdb6820c82", "pintu": "@bobbyfirmansyah", "jatuh_tempo": "11-Oct-24", "komisi": "85/145/200/270/350/450", "notes": "3-april-2026=20jt / 9july2025=11jt kerja mulai 11 oct 2024"},
+    {"nama": "NURHADI GUSNAIN", "kode": 324, "gaji": 11000101, "gaji_x_fee": 11022101, "eth": "0x031F52Aa40aB6e8925dB0823626eF7C15f4310f2", "pintu": "@nurhadi.gusnain916", "jatuh_tempo": "19-Jun-25", "komisi": "2thn=7k usd", "notes": "10jan2026=11jt//start-19june2025~spv malam"},
+    {"nama": "HERIY HARYADI", "kode": 0, "gaji": 12000000, "gaji_x_fee": 12024000, "eth": "0x8FFf385A30c91548C519Be4eC92E576872a0c650", "pintu": "@hery65664597", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "YOGI ANDIKA", "kode": 0, "gaji": 12000000, "gaji_x_fee": 12024000, "eth": "0x12AD8a8c3aA7c1F902B2Cb2BbB2b21c5F5b5D34a", "pintu": "@ya5666913602", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "ACEN", "kode": 0, "gaji": 30123789, "gaji_x_fee": 30159789, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "CELVIN APRIO", "kode": 0, "gaji": 5000333, "gaji_x_fee": 5005333, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "TENGKU REZA ERIANDA", "kode": 0, "gaji": 5123789, "gaji_x_fee": 5128789, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "WIVIANY ELLEN", "kode": 0, "gaji": 4500564, "gaji_x_fee": 4505564, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "M RIZKY PRATAMA", "kode": 0, "gaji": 5000000, "gaji_x_fee": 5005000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "SHEREN", "kode": 0, "gaji": 4000000, "gaji_x_fee": 4004000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "JOURDAN", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "MUHAMMAD SAFIUDIN", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "TEGAR", "kode": 0, "gaji": 4000000, "gaji_x_fee": 4004000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "ERICK", "kode": 0, "gaji": 3800000, "gaji_x_fee": 3803800, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "HENDY HALIM", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "JIU CHING", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "STEVEN ZEBUA", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "JUSTIN LIMORGEN", "kode": 0, "gaji": 3500000, "gaji_x_fee": 3503500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "RIDUAN HAMID", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "M RAFLY AL RISYA", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "KELVIN ADINATA", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "M FARIZ RAMADHAN", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "JIMMY CHANG", "kode": 0, "gaji": 3000000, "gaji_x_fee": 3003000, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "SANDY YULPIANDA", "kode": 0, "gaji": 2500000, "gaji_x_fee": 2502500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
+    {"nama": "MUHAMMAD VADRIZAL", "kode": 0, "gaji": 2500000, "gaji_x_fee": 2502500, "eth": "", "pintu": "", "jatuh_tempo": "", "komisi": "", "notes": ""},
 ]
 
 # ================= CRYPTO KEY (AES-GCM via hashlib fallback) =================
@@ -261,13 +261,15 @@ class FastGajiApp:
         self.detail_text.config(state="normal")
         self.detail_text.delete("1.0", "end")
         lines = [
-            f"Nama    : {k['nama']}",
-            f"Gaji    : Rp {k['gaji']:,.0f}",
-            f"Bank    : {k.get('bank','')} | {k.get('norek','')}",
-            f"EWallet : {k.get('ewallet','')}",
-            f"Pintu   : {k.get('pintu','')}",
-            f"ETH     : {k.get('eth','') or '-'}",
-            f"BNB     : {k.get('bnb','') or '-'}",
+            f"Kode     : {k.get('kode', 0)}",
+            f"Nama     : {k['nama']}",
+            f"Gaji     : Rp {k['gaji']:,.0f}",
+            f"Gaji+Fee : Rp {k.get('gaji_x_fee', k['gaji']):,.0f}",
+            f"EVM/ETH  : {k.get('eth','') or '-'}",
+            f"Pintu    : {k.get('pintu','') or '-'}",
+            f"Jatuh    : {k.get('jatuh_tempo','') or '-'}",
+            f"Komisi   : {k.get('komisi','') or '-'}",
+            f"Notes    : {k.get('notes','') or '-'}",
         ]
         self.detail_text.insert("1.0", "\n".join(lines))
         self.detail_text.config(state="disabled")
@@ -369,7 +371,7 @@ class FastGajiApp:
         nama = self.tree.item(sel[0])["values"][0]
         k = next(x for x in self.karyawan if x["nama"] == nama)
         if not k.get("eth"):
-            messagebox.showwarning("Alamat", f"{nama} tidak punya address ETH/BSC!")
+            messagebox.showwarning("Alamat", f"{nama} tidak punya address EVM!")
             return
         usdt = k["gaji"] / self.kurs
         if not messagebox.askyesno("Konfirmasi",
@@ -409,10 +411,10 @@ class FastGajiApp:
                 return
             with open(path, "w", newline="", encoding="utf-8-sig") as f:
                 w = csv.writer(f)
-                w.writerow(["Nama", "Gaji IDR", "USDT", "Bank", "NoRek", "ETH", "BNB"])
+                w.writerow(["Kode", "Nama", "Gaji IDR", "Gaji+Fee", "USDT", "EVM/ETH", "Pintu", "Komisi", "Notes"])
                 for k in self.karyawan:
                     usdt = k["gaji"] / self.kurs if self.kurs else 0
-                    w.writerow([k["nama"], k["gaji"], round(usdt, 2), k.get("bank",""), k.get("norek",""), k.get("eth",""), k.get("bnb","")])
+                    w.writerow([k.get("kode",0), k["nama"], k["gaji"], k.get("gaji_x_fee", k["gaji"]), round(usdt, 2), k.get("eth",""), k.get("pintu",""), k.get("komisi",""), k.get("notes","")])
             messagebox.showinfo("Sukses", "CSV tersimpan: " + path)
         except Exception as e:
             messagebox.showerror("Error", str(e))
