@@ -439,6 +439,7 @@ class FastGajiApp:
         self.tree_a.pack(fill="x")
         self.tree_a.bind("<<TreeviewSelect>>", self._on_select)
         self.tree_a.bind("<Button-3>", self._show_context_menu)
+        self.tree_a.bind("<Control-c>", self._copy_active)
         self.tree_a_jt = tk.Label(left, text="", font=("Segoe UI", 9), bg="#0d1117", fg="#8b949e")
         self.tree_a_jt.pack(anchor="w", pady=(2, 6))
 
@@ -461,6 +462,7 @@ class FastGajiApp:
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
         self.tree.bind("<Button-3>", self._show_context_menu)
+        self.tree.bind("<Control-c>", self._copy_active)
 
         # Total label
         self.total_label = tk.Label(left, text="", font=("Segoe UI", 10, "bold"), bg="#0d1117", fg="#f85149")
@@ -894,6 +896,25 @@ class FastGajiApp:
             self.tree.insert("", "end", values=(k["nama"], _fmt_idr(k["gaji"]), usdt), tags=(tag,) if tag else ())
             total += k["gaji"]
         self.total_label.config(text=f"Total Karyawan: {len(rows)}  |  Total Gaji: Rp {total:,.0f}")
+
+    def _copy_active(self, _=None):
+        """Ctrl+C: copy record aktif (nama, gaji, USDT) ke clipboard."""
+        sel = self.tree.selection()
+        tree = self.tree
+        if not sel:
+            sel = self.tree_a.selection()
+            tree = self.tree_a
+        if not sel:
+            return
+        vals = tree.item(sel[0])["values"]
+        teks = f"{vals[0]}\t{vals[1]}\t{vals[2]}"
+        self.root.clipboard_clear()
+        self.root.clipboard_append(teks)
+        # kasih feedback kecil di status
+        try:
+            self.status_bar.config(text=f"📋 Copied: {vals[0][:30]}... (Ctrl+V di mana aja!)")
+        except Exception:
+            pass
 
     def _show_context_menu(self, event):
         """Menu klik kanan pada daftar karyawan."""
