@@ -152,14 +152,15 @@ def db_upsert_karyawan(k):
     """Insert atau update karyawan by kode (PRIMARY KEY)."""
     conn = _db()
     conn.execute("""INSERT INTO karyawan (kode, nama, gaji, gaji_x_fee, eth, pintu, jatuh_tempo, komisi, notes,
-                    bank, norek, namarek, email, notelp, status, ewallet, btc, ovo)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    bank, norek, namarek, email, notelp, status, ewallet, btc, ovo, aktif)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(kode) DO UPDATE SET
                         nama=excluded.nama, gaji=excluded.gaji, gaji_x_fee=excluded.gaji_x_fee,
                         eth=excluded.eth, pintu=excluded.pintu, jatuh_tempo=excluded.jatuh_tempo,
                         komisi=excluded.komisi, notes=excluded.notes, bank=excluded.bank, norek=excluded.norek,
                         namarek=excluded.namarek, email=excluded.email, notelp=excluded.notelp,
-                        status=excluded.status, ewallet=excluded.ewallet, btc=excluded.btc, ovo=excluded.ovo""",
+                        status=excluded.status, ewallet=excluded.ewallet, btc=excluded.btc, ovo=excluded.ovo,
+                        aktif=excluded.aktif""",
                  (k.get("kode", 0), k.get("nama",""), k.get("gaji",0), k.get("gaji_x_fee",0),
                   k.get("eth",""), k.get("pintu",""), k.get("jatuh_tempo",""),
                   k.get("komisi",""), k.get("notes",""), k.get("bank",""), k.get("norek",""),
@@ -564,7 +565,11 @@ class FastGajiApp:
             self.balance_label.config(text="💰 Balance: buka key dulu 🔓")
             return
         try:
-            w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+            W3Cls = _get_web3()
+            if not W3Cls:
+                messagebox.showerror("Error", "web3 gagal dimuat")
+                return
+            w3 = W3Cls(W3Cls.HTTPProvider(BSC_RPC))
             acct = w3.eth.account.from_key(self.private_key)
             addr = acct.address
             bnb = w3.eth.get_balance(addr) / 10**18
@@ -608,7 +613,11 @@ class FastGajiApp:
             f"Kirim 1.00 USDT (test) ke:\n{address}\n\nIni TRANSAKSI SUNGGAHAN — butuh fee BNB kecil!\nLanjut?"):
             return
         try:
-            w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+            W3Cls = _get_web3()
+            if not W3Cls:
+                messagebox.showerror("Error", "web3 gagal dimuat")
+                return
+            w3 = W3Cls(W3Cls.HTTPProvider(BSC_RPC))
             acct = w3.eth.account.from_key(self.private_key)
             contract = w3.eth.contract(address=USDT_CA, abi=USDT_ABI)
             amount = int(1 * 10**18)  # 1 USDT
@@ -1135,8 +1144,9 @@ class FastGajiApp:
             try:
                 self.private_key = load_key(pw.get())
                 addr = "?"
-                if HAVE_WEB3:
-                    w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+                W3Cls = _get_web3()
+                if W3Cls:
+                    w3 = W3Cls(W3Cls.HTTPProvider(BSC_RPC))
                     addr = w3.to_checksum_address(w3.eth.account.from_key(self.private_key).address)
                 self.key_status.config(text=f"✅ Key terbuka! Address: {addr[:12]}...")
                 self._update_balance()
@@ -1173,7 +1183,11 @@ class FastGajiApp:
             f"Kirim {usdt:,.2f} USDT ke:\n{k['eth']}\n({nama})\n\nLANJUT?"):
             return
         try:
-            w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+            W3Cls = _get_web3()
+            if not W3Cls:
+                messagebox.showerror("Error", "web3 gagal dimuat")
+                return
+            w3 = W3Cls(W3Cls.HTTPProvider(BSC_RPC))
             acct = w3.eth.account.from_key(self.private_key)
             contract = w3.eth.contract(address=USDT_CA, abi=USDT_ABI)
             amount = int(usdt * 10**18)
